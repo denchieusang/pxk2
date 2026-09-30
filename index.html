@@ -1842,31 +1842,69 @@ const submitOrder = () => {
 const updateProductDatalist = (el) => { const stock = loadData(KEYS.STOCK); document.getElementById(el).innerHTML = stock.map(s => { const bal = Number(s.quantityIn||0)-Number(s.quantityOut||0); const stockText = bal < 0 ? `Âm ${Math.abs(bal)} • CHỜ NHẬP` : `Tồn: ${bal}`; return `<option value="${s.name} {V:${s.costPrice}}">${stockText} - Vốn: ${formatCurrency(s.costPrice)}</option>`; }).join(''); }
     const numberToVietnameseText = (number) => {
         number = Math.round(Number(number || 0));
-        if(number === 0) return 'Không đồng';
-        const units = ['',' nghìn',' triệu',' tỷ',' nghìn tỷ',' triệu tỷ'];
-        const digits = ['không','một','hai','ba','bốn','năm','sáu','bảy','tám','chín'];
+        if(!Number.isFinite(number) || number <= 0) return 'Không đồng';
+
+        const units = ['', ' nghìn', ' triệu', ' tỷ', ' nghìn tỷ', ' triệu tỷ'];
+        const digits = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+
+        // Đọc một nhóm tối đa 3 chữ số. "full" chỉ dùng cho nhóm thấp hơn
+        // khi phía trước đã có hàng triệu/tỷ..., ví dụ 1.050.000 =
+        // "một triệu không trăm năm mươi nghìn".
         const readTriple = (n, full = false) => {
-            let hundred = Math.floor(n / 100), ten = Math.floor((n % 100) / 10), one = n % 10;
-            let out = '';
-            if(full || hundred > 0) { out += digits[hundred] + ' trăm'; }
-            if(ten > 1) { out += (out ? ' ' : '') + digits[ten] + ' mươi'; if(one === 1) out += ' mốt'; else if(one === 5) out += ' lăm'; else if(one > 0) out += ' ' + digits[one]; }
-            else if(ten === 1) { out += (out ? ' ' : '') + 'mười'; if(one === 5) out += ' lăm'; else if(one > 0) out += ' ' + digits[one]; }
-            else if(ten === 0 && one > 0) {
-                if(out) out += ' linh';
-                if(one === 5 && out) out += ' lăm';
-                else out += ' ' + digits[one];
+            const hundred = Math.floor(n / 100);
+            const ten = Math.floor((n % 100) / 10);
+            const one = n % 10;
+            const words = [];
+
+            if(hundred > 0) {
+                words.push(digits[hundred], 'trăm');
+            } else if(full && n > 0) {
+                words.push('không', 'trăm');
             }
-            return out.trim();
+
+            if(ten > 1) {
+                words.push(digits[ten], 'mươi');
+                if(one === 1) words.push('mốt');
+                else if(one === 5) words.push('lăm');
+                else if(one > 0) words.push(digits[one]);
+            } else if(ten === 1) {
+                words.push('mười');
+                if(one === 5) words.push('lăm');
+                else if(one > 0) words.push(digits[one]);
+            } else if(one > 0) {
+                // Chỉ đọc "linh" khi đã có hàng trăm (kể cả "không trăm").
+                if(hundred > 0 || full) words.push('linh');
+                // 5 đứng sau hàng chục bằng 0 phải đọc là "năm", không phải "lăm".
+                words.push(digits[one]);
+            }
+
+            return words.join(' ');
         };
-        let parts = [];
-        let groupIndex = 0;
-        while(number > 0) {
-            const block = number % 1000;
-            if(block > 0) parts.unshift(readTriple(block, groupIndex > 0 && block < 100) + units[groupIndex]);
-            number = Math.floor(number / 1000);
-            groupIndex++;
+
+        // Tách toàn bộ số thành các nhóm 3 chữ số từ thấp lên cao.
+        const groups = [];
+        let remaining = number;
+        while(remaining > 0) {
+            groups.push(remaining % 1000);
+            remaining = Math.floor(remaining / 1000);
         }
-        return parts.join(' ').replace(/\s+/g,' ').trim().replace(/^./, c => c.toUpperCase()) + ' đồng';
+
+        const parts = [];
+        let hasHigherSpokenGroup = false;
+        for(let i = groups.length - 1; i >= 0; i--) {
+            const block = groups[i];
+            if(block === 0) continue;
+
+            // Nhóm cao nhất luôn đọc tự nhiên: 1.000.000 => "một triệu".
+            // Nhóm thấp hơn dưới 100 sẽ bổ sung "không trăm" khi cần:
+            // 1.050.000 => "một triệu không trăm năm mươi nghìn".
+            const full = hasHigherSpokenGroup && block < 100;
+            parts.push(readTriple(block, full) + (units[i] || ''));
+            hasHigherSpokenGroup = true;
+        }
+
+        const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+        return text.charAt(0).toUpperCase() + text.slice(1) + ' đồng';
     };
 
     const updateInvoicePreview = () => { 
